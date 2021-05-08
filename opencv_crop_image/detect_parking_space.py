@@ -1,8 +1,17 @@
 import cv2
 import numpy as np
-from drawing_utils import draw_contours
 from classifier import classifier
-
+import pandas as pd
+import urllib3
+import json
+import requests
+from Crypto.Hash import SHA256
+from Crypto.PublicKey import RSA
+from Crypto.Signature import pkcs1_15
+import hashlib
+import hmac
+import binascii
+from register_new_pi import get_keys
 
 class DetectSpaces:
     DETECT_DELAY = 1
@@ -16,8 +25,11 @@ class DetectSpaces:
         self.mask_array = []
 
     def detect_spaces(self):
+        # print("detecting spaces...")
+        # video_file = "/data/parking_test.mp4"
         # capture video frames
-        video_capture = cv2.VideoCapture(self.video)
+        video_capture = cv2.VideoCapture(self.video) # change video_file to self.video when testing is done
+        print(video_capture.isOpened())
         video_capture.set(cv2.CAP_PROP_POS_FRAMES, self.start_frame)
 
         park_spaces_data = self.park_spaces_data
@@ -25,7 +37,7 @@ class DetectSpaces:
         # Loading drawn boxes on the video frame
         for one_space_data in park_spaces_data:
             # open points of one parking space as a numpy array
-            curr_points = np.array(one_space_data["points"]) 
+            curr_points = np.array(one_space_data["points"])
             # bounding of the contour
             bounding_rect = cv2.boundingRect(curr_points)
 
@@ -50,8 +62,10 @@ class DetectSpaces:
         # Initialize status of all marked spaces as Occupied (False)
         parking_status_array = [False] * len(park_spaces_data)
         buffer = [None] * len(park_spaces_data)
+        print("entering while loop...")
 
         while video_capture.isOpened():
+            print("video_capture.isOpened()")
             # Get current position of the video in seconds
             current_position_secs = video_capture.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
             # Read frame
@@ -87,6 +101,26 @@ class DetectSpaces:
                 elif status == parking_status_array[index] and buffer[index] != None:
                     buffer[index] = None
                     continue
+
+            ##########################
+            # push data to the server
+            ##########################
+
+            pi_id = 123456 # 123456 is a test 'pi'
+            print("pushing data to server")
+            print(pi_id)
+            keys = get_keys(pi_id)
+            encoded_data = json.dumps(parking_status_array).encode()
+            # print("array: " + json.dumps(parking_status_array))
+            signature = hmac.new(key= keys.privateKey.encode(), msg= encoded_data, digestmod="sha1")
+
+            data = {
+                "sign" : signature,
+                "text" : encoded_data.decode()
+            }
+
+            req = requests.post('http://localhost:8080/data/{0}'.format(pi_id), data = data)
+            print("done")
             
             # Change the color of the boxes if their status changed
             for index, park_space in enumerate(park_spaces_data):
